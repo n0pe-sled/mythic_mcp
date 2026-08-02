@@ -1,7 +1,7 @@
 [project]
-name = "mcpexample"
-version = "0.1.0"
-description = "Add your description here"
+name = "mythic-mcp"
+version = "0.2.0"
+description = "Agent-agnostic MCP server backed by Mythic Scripting"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

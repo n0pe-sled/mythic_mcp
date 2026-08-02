@@ -1,39 +1,77 @@
 # Mythic MCP
 
-A quick MCP demo for Mythic, allowing LLMs to pentest on our behalf!
+An agent-agnostic MCP server for Mythic. It uses the official asynchronous [Mythic Scripting](https://github.com/MythicMeta/Mythic_Scripting) package and exposes Mythic primitives instead of assuming command names from a specific payload type.
+
+## Design
+
+- Discover callbacks and their payload types at runtime.
+- Discover the command set and parameter guidance supplied by each agent.
+- Submit any supported command with string or structured parameters.
+- Keep long-running task submission separate from completion and output collection.
+- Support Mythic file and payload transfer with base64 at the MCP boundary.
+- Read authentication from environment variables so credentials are not exposed in process arguments.
 
 ## Requirements
 
-1. uv
-2. python3
-3. Claude Desktop (or other MCP Client)
+- Python 3.10 or later
+- [uv](https://docs.astral.sh/uv/)
+- A Mythic operator username/password or API token
 
-## Usage with Claude Desktop
+## Configuration
 
-To deploy this MCP Server with Claude Desktop, you'll need to edit your `claude_desktop_config.json` to add the following:
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MYTHIC_HOST` | `127.0.0.1` | Mythic web/API hostname |
+| `MYTHIC_PORT` | `7443` | Mythic web/API port |
+| `MYTHIC_SSL` | `true` | Set to `false` for a non-TLS endpoint |
+| `MYTHIC_API_TOKEN` | | Preferred authentication method |
+| `MYTHIC_USERNAME` | | Used with `MYTHIC_PASSWORD` when no token is set |
+| `MYTHIC_PASSWORD` | | Used with `MYTHIC_USERNAME` when no token is set |
 
-```
+CLI flags with the same names are available for temporary testing. Environment variables are preferred for secrets.
+
+Example MCP client configuration:
+
+```json
 {
-    "mcpServers": {
-        "mythic_mcp": {
-            "command": "/Users/xpn/.local/bin/uv",
-            "args": [
-                "--directory",
-                "/full/path/to/mythic_mcp/",
-                "run",
-                "main.py",
-                "mythic_admin",
-                "mythic_admin_password",
-                "localhost",
-                "7443"
-            ]
-        }
+  "mcpServers": {
+    "mythic": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/full/path/to/mythic-mcp",
+        "run",
+        "main.py"
+      ],
+      "env": {
+        "MYTHIC_HOST": "127.0.0.1",
+        "MYTHIC_PORT": "7443",
+        "MYTHIC_API_TOKEN": "replace-with-an-operator-api-token"
+      }
     }
+  }
 }
 ```
 
-Once done, kick off Claude Desktop. There are sample prompts to show how to task the LLM, but really anything will work along the lines of:
+## MCP tools
 
+- `get_server_info`, `list_operations`, `set_current_operation`
+- `list_callbacks`
+- `list_callback_commands`, `get_command_parameters`
+- `issue_task`, `list_tasks`, `wait_for_task`, `get_task_output`
+- `register_file`, `download_file`
+- `list_services`, `list_payloads`, `create_payload`, `download_payload`
+- `control_c2_profile`
+
+Use the callback display ID and task display ID shown in the Mythic UI. `issue_task` is asynchronous by default. Discover a callback's commands and parameters before submitting agent-specific tasking.
+
+## Development
+
+```sh
+uv sync
+uv run python -m unittest discover -s tests -v
 ```
-You are an automated pentester, tasked with emulating a specific threat actor. The threat actor is APT31. Your objective is: Add a flag to C:\win.txt on DC01. Perform any required steps to meet the objective, using only techniques documented by the threat actor.
-```
+
+With configuration variables set, non-mutating live checks are available as `uv run python -m tests.live_smoke` and `uv run python -m tests.live_mcp_smoke`.
+
+No agent or C2 profile is required for connection, operation, callback, task-history, or payload-history queries. Tasking and payload builds naturally require compatible services installed in Mythic.

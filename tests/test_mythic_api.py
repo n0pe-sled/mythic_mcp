@@ -40,18 +40,34 @@ class MythicAPITests(unittest.IsolatedAsyncioTestCase):
             "display_id": 4,
             "payload": {"payloadtype": {"name": "example-agent"}},
         }
+        response = {
+            "callback": [
+                {
+                    "loadedcommands": [
+                        {
+                            "version": 2,
+                            "command": {
+                                "cmd": "do_thing",
+                                "attributes": {},
+                                "commandparameters": [{"name": "value"}],
+                            },
+                        }
+                    ]
+                }
+            ]
+        }
         with patch.object(client, "get_callback", AsyncMock(return_value=callback)):
             with patch(
-                "lib.mythic_api.mythic.get_all_commands_for_payloadtype",
-                AsyncMock(return_value=[{"cmd": "do_thing", "attributes": {}}]),
+                "lib.mythic_api.mythic.execute_custom_query",
+                AsyncMock(return_value=response),
             ) as commands:
-                result = await client.get_callback_commands(4)
+                result = await client.get_callback_commands(4, include_parameters=True)
 
         self.assertEqual(result["payload_type"], "example-agent")
         self.assertEqual(result["commands"][0]["cmd"], "do_thing")
-        commands.assert_awaited_once_with(
-            client.mythic_instance, payload_type_name="example-agent"
-        )
+        self.assertTrue(result["commands"][0]["loaded"])
+        self.assertEqual(result["commands"][0]["parameters"][0]["name"], "value")
+        self.assertEqual(commands.await_args.kwargs["variables"], {"callback_id": 4})
 
     async def test_issues_arbitrary_agent_command(self):
         client = self.client()

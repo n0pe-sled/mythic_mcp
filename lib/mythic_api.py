@@ -92,41 +92,83 @@ class MythicAPI:
     ) -> dict[str, Any]:
         callback = await self.get_callback(callback_id)
         payload_type = callback["payload"]["payloadtype"]["name"]
-        commands = await mythic.get_all_commands_for_payloadtype(
-            self._connection(), payload_type_name=payload_type
+        response = await mythic.execute_custom_query(
+            self._connection(),
+            query="""
+            query MCPCallbackCommands($callback_id: Int!) {
+                callback(where: {display_id: {_eq: $callback_id}}) {
+                    loadedcommands {
+                        version
+                        command {
+                            id
+                            cmd
+                            description
+                            help_cmd
+                            author
+                            version
+                            needs_admin
+                            script_only
+                            supported_ui_features
+                            attributes
+                            commandparameters {
+                                name
+                                display_name
+                                cli_name
+                                type
+                                default_value
+                                choices
+                                description
+                                supported_agents
+                                supported_agent_build_parameters
+                                choice_filter_by_command_attributes
+                                choices_are_all_commands
+                                choices_are_loaded_commands
+                                dynamic_query_function
+                                parameter_group_name
+                                required
+                                ui_position
+                            }
+                        }
+                    }
+                }
+            }
+            """,
+            variables={"callback_id": callback_id},
         )
+        records = response.get("callback", [])
+        if len(records) != 1:
+            raise ValueError(f"Callback {callback_id} does not exist")
+        commands = []
+        for loaded in records[0]["loadedcommands"]:
+            command = loaded["command"]
+            command["loaded_version"] = loaded["version"]
+            command["loaded"] = True
+            command["parameters"] = command.pop("commandparameters")
+            if not include_parameters:
+                command.pop("parameters")
+            commands.append(command)
+        commands.sort(key=lambda item: item["cmd"])
         result: dict[str, Any] = {
             "callback_id": callback_id,
             "payload_type": payload_type,
             "commands": commands,
         }
-        if include_parameters:
-            result["parameter_options"] = {
-                command["cmd"]: await mythic.get_command_parameter_options(
-                    self._connection(),
-                    command_name=command["cmd"],
-                    payload_type_name=payload_type,
-                )
-                for command in commands
-            }
         return result
 
     async def get_command_parameters(
         self, callback_id: int, command_name: str
     ) -> dict[str, Any]:
-        callback = await self.get_callback(callback_id)
-        payload_type = callback["payload"]["payloadtype"]["name"]
-        options = await mythic.get_command_parameter_options(
-            self._connection(),
-            command_name=command_name,
-            payload_type_name=payload_type,
+        capabilities = await self.get_callback_commands(
+            callback_id, include_parameters=True
         )
-        return {
-            "callback_id": callback_id,
-            "payload_type": payload_type,
-            "command": command_name,
-            "parameter_options": options,
-        }
+        for command in capabilities["commands"]:
+            if command["cmd"] == command_name:
+                return {
+                    "callback_id": callback_id,
+                    "payload_type": capabilities["payload_type"],
+                    **command,
+                }
+        raise ValueError(f"Command {command_name} is not loaded in callback {callback_id}")
 
     async def issue_task(
         self,
@@ -206,6 +248,100 @@ class MythicAPI:
             }
             """,
         )
+
+    async def get_payload_type(self, payload_type: str) -> dict[str, Any] | None:
+        response = await mythic.execute_custom_query(
+            self._connection(),
+            query="""
+            query MCPPayloadType($payload_type: String!) {
+                payloadtype(where: {name: {_eq: $payload_type}}) {
+                    id
+                    name
+                    author
+                    note
+                    file_extension
+                    supported_os
+                    supports_dynamic_loading
+                    wrapper
+                    mythic_encrypts
+                    container_running
+                    buildparameters {
+                        name
+                        description
+                        parameter_type
+                        required
+                        default_value
+                        choices
+                        verifier_regex
+                        randomize
+                        format_string
+                        crypto_type
+                    }
+                    payloadtypec2profiles {
+                        c2profile {
+                            name
+                            running
+                            container_running
+                            is_p2p
+                        }
+                    }
+                }
+            }
+            """,
+            variables={"payload_type": payload_type},
+        )
+        records = response.get("payloadtype", [])
+        return records[0] if len(records) == 1 else None
+
+    async def get_registered_command(
+        self, payload_type: str, command_name: str
+    ) -> dict[str, Any] | None:
+        response = await mythic.execute_custom_query(
+            self._connection(),
+            query="""
+            query MCPPayloadCommand($payload_type: String!, $command: String!) {
+                command(where: {
+                    cmd: {_eq: $command},
+                    payloadtype: {name: {_eq: $payload_type}}
+                }) {
+                    id
+                    cmd
+                    description
+                    help_cmd
+                    author
+                    version
+                    needs_admin
+                    script_only
+                    supported_ui_features
+                    attributes
+                    commandparameters {
+                        name
+                        display_name
+                        cli_name
+                        type
+                        default_value
+                        choices
+                        description
+                        supported_agents
+                        supported_agent_build_parameters
+                        choice_filter_by_command_attributes
+                        choices_are_all_commands
+                        choices_are_loaded_commands
+                        dynamic_query_function
+                        parameter_group_name
+                        required
+                        ui_position
+                    }
+                }
+            }
+            """,
+            variables={"payload_type": payload_type, "command": command_name},
+        )
+        records = response.get("command", [])
+        if len(records) != 1:
+            return None
+        records[0]["parameters"] = records[0].pop("commandparameters")
+        return records[0]
 
     async def create_payload(
         self,

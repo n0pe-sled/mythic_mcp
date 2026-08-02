@@ -35,6 +35,12 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 main._settings(self.args())
 
+    def test_maps_declared_ui_features_to_result_channels(self):
+        channels = main._expected_result_channels(
+            {"supported_ui_features": ["process_browser:list"]}
+        )
+        self.assertEqual(channels, ["process_browser", "task_response"])
+
 
 if __name__ == "__main__":
     unittest.main()

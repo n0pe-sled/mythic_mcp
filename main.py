@@ -10,9 +10,26 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from lib.mythic_api import MythicAPI
+from lib.payload_docs import PayloadDocumentationStore
 
 mcp = FastMCP("mythic")
 api: MythicAPI | None = None
+documentation = PayloadDocumentationStore()
+
+
+def _expected_result_channels(command: dict[str, Any] | None) -> list[str]:
+    channels = {"task_response"}
+    for feature in (command or {}).get("supported_ui_features") or []:
+        area = feature.split(":", 1)[0]
+        channels.add(
+            {
+                "callback_table": "callback_state",
+                "file_browser": "file_browser",
+                "process_browser": "process_browser",
+                "task_response": "interactive_task_response",
+            }.get(area, area)
+        )
+    return sorted(channels)
 
 
 def _api() -> MythicAPI:
@@ -49,10 +66,10 @@ async def list_callbacks(active_only: bool = True) -> list[dict[str, Any]]:
 async def list_callback_commands(
     callback_id: int, include_parameters: bool = False
 ) -> dict[str, Any]:
-    """Discover commands supplied by the agent backing a callback.
+    """Discover the commands currently loaded in a callback.
 
-    callback_id is Mythic's callback display ID. Agent-specific commands must be
-    discovered here rather than assumed by the MCP server.
+    callback_id is Mythic's callback display ID. The result follows dynamic
+    command additions/removals reported by the agent.
     """
     return await _api().get_callback_commands(
         callback_id, include_parameters=include_parameters
@@ -63,7 +80,7 @@ async def list_callback_commands(
 async def get_command_parameters(
     callback_id: int, command_name: str
 ) -> dict[str, Any]:
-    """Return Mythic's parameter guidance for one callback command."""
+    """Return structured Mythic metadata and parameter groups for a loaded command."""
     return await _api().get_command_parameters(callback_id, command_name)
 
 
@@ -131,6 +148,75 @@ async def list_payloads() -> list[dict[str, Any]]:
 async def list_services() -> dict[str, Any]:
     """List installed payload types and C2 profiles with container state."""
     return await _api().get_services()
+
+
+@mcp.tool()
+async def index_payload_docs(
+    payload_type: str,
+    repository_url: str,
+    ref: str | None = None,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """Index an agent's versioned repository documentation.
+
+    repository_url may be a public/private Git URL or a local repository path.
+    Supply the deployed tag or commit as ref when known.
+    """
+    return await documentation.index(payload_type, repository_url, ref, refresh)
+
+
+@mcp.tool()
+async def search_payload_docs(
+    payload_type: str, query: str, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Search indexed documentation for a payload type and return source-linked excerpts."""
+    return await documentation.search(payload_type, query, limit)
+
+
+@mcp.tool()
+async def describe_payload_type(payload_type: str) -> dict[str, Any]:
+    """Merge live Mythic build/C2 metadata with indexed agent capabilities."""
+    runtime = await _api().get_payload_type(payload_type)
+    docs = documentation.get(payload_type)
+    return {
+        "payload_type": payload_type,
+        "installed": runtime is not None,
+        "runtime": runtime,
+        "documentation": docs,
+    }
+
+
+@mcp.tool()
+async def describe_command(
+    payload_type: str, command_name: str, callback_id: int | None = None
+) -> dict[str, Any]:
+    """Merge command schema, callback loaded state, and indexed documentation."""
+    runtime = await _api().get_registered_command(payload_type, command_name)
+    loaded: bool | None = None
+    if callback_id is not None:
+        capabilities = await _api().get_callback_commands(
+            callback_id, include_parameters=False
+        )
+        if capabilities["payload_type"] != payload_type:
+            raise ValueError(
+                f"Callback {callback_id} uses {capabilities['payload_type']}, not {payload_type}"
+            )
+        loaded = any(
+            command["cmd"] == command_name for command in capabilities["commands"]
+        )
+    try:
+        docs = await documentation.command_docs(payload_type, command_name)
+    except ValueError:
+        docs = []
+    return {
+        "payload_type": payload_type,
+        "command": command_name,
+        "registered": runtime is not None,
+        "loaded": loaded,
+        "expected_result_channels": _expected_result_channels(runtime),
+        "runtime": runtime,
+        "documentation": docs,
+    }
 
 
 @mcp.tool()

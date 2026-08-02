@@ -9,6 +9,7 @@ An agent-agnostic MCP server for Mythic. It uses the official asynchronous [Myth
 - Submit any supported command with string or structured parameters.
 - Keep long-running task submission separate from completion and output collection.
 - Support Mythic file and payload transfer with base64 at the MCP boundary.
+- Overlay exact-ref payload documentation without executing repository code.
 - Read authentication from environment variables so credentials are not exposed in process arguments.
 
 ## Requirements
@@ -58,12 +59,30 @@ Example MCP client configuration:
 - `get_server_info`, `list_operations`, `set_current_operation`
 - `list_callbacks`
 - `list_callback_commands`, `get_command_parameters`
+- `index_payload_docs`, `search_payload_docs`
+- `describe_payload_type`, `describe_command`
 - `issue_task`, `list_tasks`, `wait_for_task`, `get_task_output`
 - `register_file`, `download_file`
 - `list_services`, `list_payloads`, `create_payload`, `download_payload`
 - `control_c2_profile`
 
 Use the callback display ID and task display ID shown in the Mythic UI. `issue_task` is asynchronous by default. Discover a callback's commands and parameters before submitting agent-specific tasking.
+
+## Payload documentation
+
+Index the repository and exact deployed ref once, then use descriptions/searches alongside live Mythic state:
+
+```text
+index_payload_docs(
+  payload_type="poseidon",
+  repository_url="https://github.com/MythicAgents/poseidon",
+  ref="<deployed-tag-or-commit>"
+)
+describe_payload_type(payload_type="poseidon")
+describe_command(payload_type="poseidon", command_name="ps", callback_id=7)
+```
+
+The index reads Git objects without a checkout, limits input to documentation files, and caches source-linked chunks under `~/.cache/mythic-mcp/docs`. `agent_capabilities.json` is parsed as structured data. Markdown is split by heading so command usage, arguments, output notes, development guidance, and OPSEC notes can be retrieved without injecting an entire repository into the model context.
 
 ## Development
 

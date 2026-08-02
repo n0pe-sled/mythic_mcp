@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import json
 import os
 from typing import Any
 
@@ -30,6 +32,31 @@ def _expected_result_channels(command: dict[str, Any] | None) -> list[str]:
             }.get(area, area)
         )
     return sorted(channels)
+
+
+def _task_responses(
+    responses: list[dict[str, Any]], include_raw: bool = False
+) -> list[dict[str, Any]]:
+    """Decode Mythic's base64 response field into agent-readable text/JSON."""
+    decoded_responses = []
+    for response in responses:
+        decoded = dict(response)
+        raw = decoded.pop("response_text", None)
+        if isinstance(raw, str):
+            try:
+                response_text = base64.b64decode(raw).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                response_text = None
+            decoded["response_text"] = response_text
+            if response_text is not None:
+                try:
+                    decoded["response_json"] = json.loads(response_text)
+                except json.JSONDecodeError:
+                    pass
+            if include_raw or response_text is None:
+                decoded["response_base64"] = raw
+        decoded_responses.append(decoded)
+    return decoded_responses
 
 
 def _api() -> MythicAPI:
@@ -121,9 +148,14 @@ async def wait_for_task(task_id: int, timeout: int | None = None) -> dict[str, A
 
 
 @mcp.tool()
-async def get_task_output(task_id: int) -> list[dict[str, Any]]:
-    """Get currently available responses for a task display ID."""
-    return await _api().get_task_output(task_id)
+async def get_task_output(
+    task_id: int, include_raw: bool = False
+) -> list[dict[str, Any]]:
+    """Get decoded text/JSON responses for a task display ID.
+
+    Set include_raw to retain Mythic's original response_base64 field.
+    """
+    return _task_responses(await _api().get_task_output(task_id), include_raw)
 
 
 @mcp.tool()
@@ -187,6 +219,17 @@ async def describe_payload_type(payload_type: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def describe_c2_profile(profile_name: str) -> dict[str, Any]:
+    """Return live configuration parameters for an installed C2 profile."""
+    runtime = await _api().get_c2_profile(profile_name)
+    return {
+        "profile": profile_name,
+        "installed": runtime is not None,
+        "runtime": runtime,
+    }
+
+
+@mcp.tool()
 async def describe_command(
     payload_type: str, command_name: str, callback_id: int | None = None
 ) -> dict[str, Any]:
@@ -230,6 +273,7 @@ async def create_payload(
     description: str = "",
     wait_for_complete: bool = False,
     timeout: int | None = None,
+    include_all_commands: bool = False,
 ) -> dict[str, Any]:
     """Create a payload for any installed payload type and compatible C2 profile."""
     return await _api().create_payload(
@@ -242,6 +286,7 @@ async def create_payload(
         description=description,
         wait_for_complete=wait_for_complete,
         timeout=timeout,
+        include_all_commands=include_all_commands,
     )
 
 

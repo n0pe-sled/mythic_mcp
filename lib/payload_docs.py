@@ -152,7 +152,7 @@ class PayloadDocumentationStore:
             requested_ref=ref,
             commit=commit,
             capabilities=capabilities,
-            chunks=chunks[:1000],
+            chunks=chunks[:5000],
         )
         self._indexes[key] = indexed
         self._save(key, indexed)

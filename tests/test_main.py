@@ -1,4 +1,5 @@
 import argparse
+import base64
 import os
 import unittest
 from unittest.mock import patch
@@ -40,6 +41,21 @@ class SettingsTests(unittest.TestCase):
             {"supported_ui_features": ["process_browser:list"]}
         )
         self.assertEqual(channels, ["process_browser", "task_response"])
+
+    def test_decodes_text_and_structured_task_responses(self):
+        output = [{"response_text": base64.b64encode(b'[{"pid": 7}]').decode()}]
+
+        responses = main._task_responses(output)
+
+        self.assertEqual(responses[0]["response_text"], '[{"pid": 7}]')
+        self.assertEqual(responses[0]["response_json"], [{"pid": 7}])
+        self.assertNotIn("response_base64", responses[0])
+
+    def test_can_retain_raw_task_response(self):
+        raw = base64.b64encode(b"hello").decode()
+        responses = main._task_responses([{"response_text": raw}], include_raw=True)
+        self.assertEqual(responses[0]["response_base64"], raw)
+        self.assertEqual(responses[0]["response_text"], "hello")
 
 
 if __name__ == "__main__":

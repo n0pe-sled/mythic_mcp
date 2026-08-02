@@ -60,11 +60,15 @@ Example MCP client configuration:
 - `list_callbacks`
 - `list_callback_commands`, `get_command_parameters`
 - `index_payload_docs`, `search_payload_docs`
-- `describe_payload_type`, `describe_command`
+- `describe_payload_type`, `describe_c2_profile`, `describe_command`
 - `issue_task`, `list_tasks`, `wait_for_task`, `get_task_output`
 - `register_file`, `download_file`
 - `list_services`, `list_payloads`, `create_payload`, `download_payload`
 - `control_c2_profile`
+
+`get_task_output` decodes Mythic response bytes into `response_text` and, when
+the response is JSON, `response_json`. Set `include_raw=true` only when the
+original `response_base64` is needed.
 
 Use the callback display ID and task display ID shown in the Mythic UI. `issue_task` is asynchronous by default. Discover a callback's commands and parameters before submitting agent-specific tasking.
 
@@ -91,6 +95,6 @@ uv sync
 uv run python -m unittest discover -s tests -v
 ```
 
-With configuration variables set, non-mutating live checks are available as `uv run python -m tests.live_smoke` and `uv run python -m tests.live_mcp_smoke`.
+With configuration variables set, non-mutating live checks are available as `uv run python -m tests.live_smoke` and `uv run python -m tests.live_mcp_smoke`. Invoke one MCP tool for live integration testing with `uv run python -m tests.live_tool_call TOOL [JSON_ARGUMENTS]`.
 
 No agent or C2 profile is required for connection, operation, callback, task-history, or payload-history queries. Tasking and payload builds naturally require compatible services installed in Mythic.

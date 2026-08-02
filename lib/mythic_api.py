@@ -249,6 +249,40 @@ class MythicAPI:
             """,
         )
 
+    async def get_c2_profile(self, profile_name: str) -> dict[str, Any] | None:
+        response = await mythic.execute_custom_query(
+            self._connection(),
+            query="""
+            query MCPC2Profile($profile: String!) {
+                c2profile(where: {name: {_eq: $profile}}) {
+                    id
+                    name
+                    description
+                    author
+                    is_p2p
+                    is_server_routed
+                    running
+                    container_running
+                    c2profileparameters {
+                        name
+                        description
+                        parameter_type
+                        required
+                        default_value
+                        choices
+                        verifier_regex
+                        randomize
+                        format_string
+                        crypto_type
+                    }
+                }
+            }
+            """,
+            variables={"profile": profile_name},
+        )
+        records = response.get("c2profile", [])
+        return records[0] if len(records) == 1 else None
+
     async def get_payload_type(self, payload_type: str) -> dict[str, Any] | None:
         response = await mythic.execute_custom_query(
             self._connection(),
@@ -355,6 +389,7 @@ class MythicAPI:
         description: str = "",
         wait_for_complete: bool = False,
         timeout: int | None = None,
+        include_all_commands: bool = False,
     ) -> dict[str, Any]:
         return await mythic.create_payload(
             self._connection(),
@@ -367,6 +402,7 @@ class MythicAPI:
             description=description,
             return_on_complete=wait_for_complete,
             timeout=timeout,
+            include_all_commands=include_all_commands,
         )
 
     async def download_payload(self, payload_id: str) -> dict[str, str]:
